@@ -1,5 +1,7 @@
 const express = require('express')
 var bodyParser = require('body-parser');
+path = require('path'); //needed by sendFile
+
 const app = express()
 
 const port = 3000
@@ -14,6 +16,8 @@ const connectionUrl = "mongodb+srv://Annopaolo:I6CKXf5GeSkWu0H6@cluster0-fhh1o.m
 // Database Name
 const dbName = 'cevricale-db';
 
+var loggedTherapist = null;
+
 MongoClient.connect(connectionUrl, { useUnifiedTopology: true })
   .then(client => {
     app.use(bodyParser.json()); // support json encoded bodies
@@ -23,10 +27,20 @@ MongoClient.connect(connectionUrl, { useUnifiedTopology: true })
     const db = client.db(dbName)
 
     app.get('/', (req, res) => {
-      crypto.enc('Hello World!', res)
+        res.header("Access-Control-Allow-Origin", "*");
+        res.sendFile(path.join(__dirname + '/client/html/index.html'));
     })
+    app.get('/js/index.js', (req, res) => res.sendFile(path.join(__dirname + '/client/js/index.js'))) //mandare il js della pagina client
+    app.get('/css/index.css', (req, res) => res.sendFile(path.join(__dirname + '/client/css/index.css'))) //mandare il css della pagina client
+
+
 
     app.get('/therapist/:id', (req, res) => {
+      if (req.params.id != loggedTherapist){
+        res.status(403).send({ error: 'Not allowed, try to login first' });
+      }
+
+
       const activities = db.collection("activities");
       const watching = db.collection("watching");
       activities.aggregate([
@@ -62,12 +76,24 @@ MongoClient.connect(connectionUrl, { useUnifiedTopology: true })
       const cursor = therapist.find({usn : uid}).toArray()
       .then( (result) => {
         if (result != "" && crypto.decSync(result[0].psw) == psw){
+          loggedTherapist = uid;
           res.send("ok!");
         } else {
            res.status(403).send({ error: 'Forbidden!' });
         }
       })
     })
+
+    app.post('/logout', (req, res) => {
+      const uid = req.body.name;
+      if (uid != loggedTherapist){
+        res.status(403).send({ error: 'Not allowed, try to login first' });
+      } else {
+        loggedTherapist = null;
+        res.send("Ok!\n");
+      }
+    })
+
 
     app.post('/newTherapist', (req,res) => {
       const name = req.body.name;
@@ -83,23 +109,27 @@ MongoClient.connect(connectionUrl, { useUnifiedTopology: true })
         }
     })})
 
-    app.post('/', (req,res) => {
+    app.post('/newActivity', (req,res) => {
       const activities = db.collection("activities");
       activities.insertOne({uid : req.uid, scene: req.scene, time: req.time, metric: req.metric, pain: req.pain, satisfaction: req.satisfaction});
       res.send("Ok!\n")
     })
 
-  app.post('/newWatch', (req,res) => {
+    app.post('/newWatch', (req,res) => {
     const uid = req.body.uid;
     const thid = req.body.thid;
-    const watching = db.collection("watching");
-    watching.insertOne({userId :uid, therapistId: thid});
-    res.send("Ok!\n")
+    if (thid != loggedTherapist){
+        res.status(403).send({ error: 'Not allowed, try to login first' });
+    } else {
+      const watching = db.collection("watching");
+      watching.insertOne({userId :uid, therapistId: thid});
+      res.send("Ok!\n");
+    }
   })
 
     app.get('/user', (req, res) => res.send('Hello, patient!'))
 
-    app.listen(port, console.log(`Example app listening at http://localhost:${port}`))
+    app.listen(port, console.log(`App listening at http://localhost:${port}`))
 
 
   })
